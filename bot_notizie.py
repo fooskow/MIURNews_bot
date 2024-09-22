@@ -1,45 +1,44 @@
 import os
 import requests
-from bs4 import BeautifulSoup
-import telegram
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
 import time
 
-# Ottieni variabili di ambiente
-TOKEN = '7876152396:AAFwB1511A5o59QShrs7N-6CrRlLqo0uISA'
-CHAT_ID = '119121853'
-
-bot = telegram.Bot(token=TOKEN)
-url = "https://www.miur.gov.it/web/miur-usr-campania/notizie"
-
-def get_latest_news():
+# Funzione per inviare notifiche
+def invia_notifica(context: CallbackContext) -> None:
+    url = "https://www.miur.gov.it/web/miur-usr-campania/notizie"
     response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    articles = soup.find_all('div', class_='contentTitle')
-    news_list = []
     
-    for article in articles:
-        title = article.text.strip()
-        link = article.find('a')['href']
-        full_link = f"https://www.miur.gov.it{link}"
-        news_list.append((title, full_link))
+    if response.status_code == 200:
+        # Qui puoi aggiungere la logica per estrarre le notizie
+        # Ad esempio, puoi usare BeautifulSoup per fare scraping della pagina
+        notizie = "Notizie aggiornate: " + url  # Modifica secondo le tue necessità
+        
+        # Invia il messaggio al CHAT_ID specificato
+        chat_id = os.getenv('CHAT_ID')
+        context.bot.send_message(chat_id=chat_id, text=notizie)
+    else:
+        chat_id = os.getenv('CHAT_ID')
+        context.bot.send_message(chat_id=chat_id, text="Errore nel recupero delle notizie.")
+
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text('Ciao! Sono un bot! Usa /notifica per ricevere le ultime notizie.')
+
+def main():
+    TOKEN = os.getenv('TELEGRAM_TOKEN')
     
-    return news_list
+    updater = Updater(token=TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+    
+    dispatcher.add_handler(CommandHandler("start", start))
+    
+    # Puoi programmare invii automatici qui, se necessario
+    # Esempio: invia_notifica ogni ora
+    # context.job_queue.run_repeating(invia_notifica, interval=3600, first=0)
 
-def send_telegram_message(text):
-    bot.send_message(chat_id=CHAT_ID, text=text)
+    # Avvio del polling
+    updater.start_polling()
+    updater.idle()
 
-latest_news = set()
-
-while True:
-    try:
-        news = get_latest_news()
-        
-        for title, link in news:
-            if title not in latest_news:
-                send_telegram_message(f"Nuova notizia: {title}\nLink: {link}")
-                latest_news.add(title)
-        
-        time.sleep(3600)
-    except Exception as e:
-        print(f"Errore: {e}")
-        time.sleep(3600)
+if __name__ == '__main__':
+    main()
