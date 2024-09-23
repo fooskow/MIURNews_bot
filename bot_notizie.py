@@ -1,36 +1,62 @@
 import os
-import requests
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import logging
 
-# Funzione per inviare notifiche
-async def invia_notifica(context: ContextTypes.DEFAULT_TYPE) -> None:
-    url = "https://www.miur.gov.it/web/miur-usr-campania/notizie"
-    response = requests.get(url)
-    
-    if response.status_code == 200:
-        notizie = "Notizie aggiornate: " + url  # Modifica secondo le tue necessità
-        chat_id = os.getenv('CHAT_ID')
-        await context.bot.send_message(chat_id=chat_id, text=notizie)
-    else:
-        chat_id = os.getenv('CHAT_ID')
-        await context.bot.send_message(chat_id=chat_id, text="Errore nel recupero delle notizie.")
+# Inizializza il logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
+app = Flask(__name__)
+
+# Variabili di ambiente
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+CHAT_ID = os.getenv('CHAT_ID')  # Assicurati di impostare il CHAT_ID come variabile di ambiente
+PORT = int(os.environ.get('PORT', 5000))
+
+# Costruisci l'applicazione Telegram
+application = ApplicationBuilder().token(TOKEN).build()
+
+# Funzione di start che risponde con il CHAT_ID dell'utente
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text('Ciao! Sono un bot! Usa /notifica per ricevere le ultime notizie.')
+    CHAT_ID = update.message.CHAT_ID
+    await update.message.reply_text(f'Il tuo CHAT_ID è: {CHAT_ID}')
 
-def main():
-    TOKEN = os.getenv('TELEGRAM_TOKEN')
-    
-    application = ApplicationBuilder().token(TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    
-    # Esempio di invio di notifiche, se necessario
-    # application.job_queue.run_repeating(invia_notifica, interval=3600, first=0)
+# Funzione per inviare una notifica manuale
+@app.route('/send_notification', methods=['POST'])
+def send_notification():
+    message = request.form.get('message', 'Notifica di default')
+    if CHAT_ID:
+        async def send_message():
+            await application.bot.send_message(CHAT_ID=CHAT_ID, text=message)
+        application.create_task(send_message())
+        return "Messaggio inviato!"
+    return "Errore: CHAT_ID non impostato"
 
-    # Avvio del polling
-    application.run_polling()
+# Funzione per gestire il webhook
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(), application.bot)
+    async def process_update():
+        await application.process_update(update)
+    application.create_task(process_update())
+    return "OK", 200
 
+# Imposta il webhook all'avvio dell'applicazione
+async def set_webhook():
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/webhook"
+    await application.bot.set_webhook(url=webhook_url)
+
+# Aggiungi il comando /start
+application.add_handler(CommandHandler("start", start))
+
+# Avvia Flask
 if __name__ == '__main__':
-    main()
+    import asyncio
+    # Imposta il webhook all'avvio dell'app
+    asyncio.run(set_webhook())
+    # Avvia l'app Flask
+    app.run(host="0.0.0.0", port=PORT)
