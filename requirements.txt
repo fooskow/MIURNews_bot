@@ -2,3 +2,4 @@ python-telegram-bot
 requests
 Flask==2.1.0
 beautifulsoup4
+Werkzeug==2.0.3
